@@ -7,9 +7,15 @@ from sklearn.preprocessing import KBinsDiscretizer, Binarizer
 st.set_page_config(page_title="Numerical Data Encoding", layout="wide")
 st.title("🔢 Encoding Numerical Data (Binning & Binarization)")
 
-st.markdown("""
-This app helps encode numerical data using binning or binarization to simplify, reduce noise, handle outliers, or fit model requirements.
-""")
+
+def generate_csv_download(df, filename="encoded_data.csv"):
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Encoded Data as CSV",
+        data=csv,
+        file_name=filename,
+        mime='text/csv'
+    )
 
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
@@ -23,26 +29,25 @@ if uploaded_file:
         selected_col = st.selectbox("Select a numerical column", numeric_cols)
         method = st.radio("Choose encoding method", ["Equal-width Binning", "Equal-frequency Binning", "Custom Binning", "Binarization"])
 
-        if method == "Equal-width Binning":
+        col_data = df[[selected_col]].copy()
+
+        if method in ["Equal-width Binning", "Equal-frequency Binning"]:
             n_bins = st.slider("Number of bins", min_value=2, max_value=10, value=4)
-            df['EqualWidthBin'] = pd.cut(df[selected_col], bins=n_bins, labels=[f'Bin{i+1}' for i in range(n_bins)])
-            st.dataframe(df[[selected_col, 'EqualWidthBin']])
-            
-            st.subheader("📊 Histogram of Bins")
+
+            strategy = "uniform" if method == "Equal-width Binning" else "quantile"
+            kbin = KBinsDiscretizer(n_bins=n_bins, encode='ordinal', strategy=strategy)
+            df[f'{method} Result'] = kbin.fit_transform(col_data).astype(int)
+
+            bin_labels = [f'Bin{i+1}' for i in range(n_bins)]
+            df[f'{method} Label'] = pd.cut(col_data[selected_col], bins=np.unique(kbin.bin_edges_[0]), labels=bin_labels, include_lowest=True)
+
+            st.dataframe(df[[selected_col, f'{method} Result', f'{method} Label']])
+            generate_csv_download(df[[selected_col, f'{method} Result', f'{method} Label']], filename=f"{method.lower().replace(' ', '_')}.csv")
+
+            st.subheader("📊 Histogram")
             fig, ax = plt.subplots()
             df[selected_col].hist(bins=n_bins, ax=ax, color="skyblue")
-            plt.title("Equal-width Binning")
-            st.pyplot(fig)
-
-        elif method == "Equal-frequency Binning":
-            n_bins = st.slider("Number of quantile bins", min_value=2, max_value=10, value=3)
-            df['EqualFreqBin'] = pd.qcut(df[selected_col], q=n_bins, labels=[f'Bin{i+1}' for i in range(n_bins)])
-            st.dataframe(df[[selected_col, 'EqualFreqBin']])
-            
-            st.subheader("📊 Histogram of Quantiles")
-            fig, ax = plt.subplots()
-            df[selected_col].hist(ax=ax, bins=10, color="lightgreen")
-            plt.title("Equal-frequency Binning")
+            plt.title(method)
             st.pyplot(fig)
 
         elif method == "Custom Binning":
@@ -52,20 +57,18 @@ if uploaded_file:
                 labels = [f"Bin{i+1}" for i in range(len(bins) - 1)]
                 df['CustomBin'] = pd.cut(df[selected_col], bins=bins, labels=labels)
                 st.dataframe(df[[selected_col, 'CustomBin']])
-                
+                generate_csv_download(df[[selected_col, 'CustomBin']], filename="custom_binning.csv")
+
                 st.subheader("📊 Histogram of Custom Bins")
                 fig, ax = plt.subplots()
                 df[selected_col].hist(ax=ax, bins=10, color="orange")
                 plt.title("Custom Binning")
                 st.pyplot(fig)
 
-            except:
-                st.error("Invalid input. Please enter numeric values separated by commas.")
+            except Exception as e:
+                st.error(f"Invalid input. Error: {e}")
 
         elif method == "Binarization":
-            # Impute missing values first
-            col_data = df[[selected_col]].copy()
-
             if col_data[selected_col].isnull().any():
                 mean_val = col_data[selected_col].mean()
                 col_data[selected_col].fillna(mean_val, inplace=True)
@@ -82,6 +85,7 @@ if uploaded_file:
             df['Binarized'] = binarizer.fit_transform(col_data)
 
             st.dataframe(df[[selected_col, 'Binarized']])
+            generate_csv_download(df[[selected_col, 'Binarized']], filename="binarized_data.csv")
 
             st.subheader("📊 Binarization Plot")
             fig, ax = plt.subplots()
